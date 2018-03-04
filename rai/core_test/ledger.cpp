@@ -1560,6 +1560,44 @@ TEST (ledger, utx_send_receive)
 	ASSERT_FALSE (store.pending_exists (transaction, rai::pending_key (rai::genesis_account, send1.hash ())));
 }
 
+TEST (ledger, utx_send_receive_with_change)
+{
+	bool init (false);
+	rai::block_store store (init, rai::unique_path ());
+	ASSERT_TRUE (!init);
+	rai::ledger ledger (store);
+	rai::genesis genesis;
+	rai::transaction transaction (store.environment, nullptr, true);
+	genesis.initialize (transaction, store);
+	// Change representative to this randomly generated account using this send tx
+	// xrb_3w3xws11mdq6qwn5rfktn5wagbt789enbng4ednu3ewdpcdx8o794hhbchag
+	rai::account test_rep ("F03DE64009AEE4BF283C365AA0F887274531D944D1C262E9B0B38BB297D354A7");
+	rai::utx_block send1 (rai::genesis_account, genesis.hash (), test_rep, rai::genesis_amount - rai::Gxrb_ratio, rai::genesis_account, rai::test_genesis_key.prv, rai::test_genesis_key.pub, 0);
+	ASSERT_EQ (rai::process_result::progress, ledger.process (transaction, send1).code);
+	ASSERT_TRUE (store.block_exists (transaction, send1.hash ()));
+	auto send2 (store.block_get (transaction, send1.hash ()));
+	ASSERT_NE (nullptr, send2);
+	ASSERT_EQ (send1, *send2);
+	ASSERT_EQ (rai::genesis_amount - rai::Gxrb_ratio, ledger.balance (transaction, send1.hash ()));
+	ASSERT_EQ (rai::Gxrb_ratio, ledger.amount (transaction, send1.hash ()));
+	// The representative weight goes to the new rep
+	ASSERT_EQ (rai::genesis_amount - rai::Gxrb_ratio, ledger.weight (transaction, test_rep));
+	ASSERT_TRUE (store.pending_exists (transaction, rai::pending_key (rai::genesis_account, send1.hash ())));
+	// Change representative back to self
+	rai::utx_block receive1 (rai::genesis_account, send1.hash (), rai::genesis_account, rai::genesis_amount, send1.hash (), rai::test_genesis_key.prv, rai::test_genesis_key.pub, 0);
+	ASSERT_EQ (rai::process_result::progress, ledger.process (transaction, receive1).code);
+	ASSERT_TRUE (store.block_exists (transaction, receive1.hash ()));
+	auto receive2 (store.block_get (transaction, receive1.hash ()));
+	ASSERT_NE (nullptr, receive2);
+	ASSERT_EQ (receive1, *receive2);
+	ASSERT_EQ (rai::genesis_amount, ledger.balance (transaction, receive1.hash ()));
+	ASSERT_EQ (rai::Gxrb_ratio, ledger.amount (transaction, receive1.hash ()));
+	// Self rep now has the weight again
+	ASSERT_EQ (rai::genesis_amount, ledger.weight (transaction, rai::genesis_account));
+	ASSERT_EQ (0, ledger.weight (transaction, test_rep));
+	ASSERT_FALSE (store.pending_exists (transaction, rai::pending_key (rai::genesis_account, send1.hash ())));
+}
+
 TEST (ledger, utx_receive)
 {
 	bool init (false);
